@@ -6,6 +6,9 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 
 ## Unreleased
 * ⚠️ BREAKING: egui now expects integrations to do all color blending in gamma space ([#2071](https://github.com/emilk/egui/pull/2071)).
+* ⚠️ BREAKING: `func` argument to `egui::widgets::plot::Plot::x_axis_formatter` and `egui::widgets::plot::Plot::y_axis_formatter` ([#2284](https://github.com/emilk/egui/pull/2284))
+* ⚠️ BREAKING: `egui::widgets::plot::Plot::show_axes` renamed to `egui::widgets::plot::Plot::show_grid`. The origin `show_axes` API now refers to the axis labels. ([#2284](https://github.com/emilk/egui/pull/2284))
+
 
 ### Added ⭐
 * Added helper functions for animating panels that collapse/expand ([#2190](https://github.com/emilk/egui/pull/2190)).
@@ -15,11 +18,14 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * Texture loading now takes a `TexureOptions` with minification and magnification filters ([#2224](https://github.com/emilk/egui/pull/2224)).
 * Added `Key::Minus` and `Key::Equals` ([#2239](https://github.com/emilk/egui/pull/2239)).
 * Added `egui::gui_zoom` module with helpers for scaling the whole GUI of an app ([#2239](https://github.com/emilk/egui/pull/2239)).
+* Added plot axis labels and the required API to customize them. ([#2284](https://github.com/emilk/egui/pull/2284))
+* Added support for multiple x-axis- and y-axis-labels and -ticks per plot.  ([#2284](https://github.com/emilk/egui/pull/2284))
 
 ### Fixed 🐛
 * ⚠️ BREAKING: Fix text being too small ([#2069](https://github.com/emilk/egui/pull/2069)).
 * Improved text rendering ([#2071](https://github.com/emilk/egui/pull/2071)).
 * Less jitter when calling `Context::set_pixels_per_point` ([#2239](https://github.com/emilk/egui/pull/2239)).
+* Draw plot ticks outside of plotting window. ([#2284](https://github.com/emilk/egui/pull/2284))
 
 
 ## 0.19.0 - 2022-08-20
