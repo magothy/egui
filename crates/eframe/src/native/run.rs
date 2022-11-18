@@ -13,7 +13,9 @@ use super::epi_integration::{self, EpiIntegration};
 use crate::epi;
 
 #[derive(Debug)]
-pub struct RequestRepaintEvent;
+pub enum UserEvent {
+    RequestRepaint,
+}
 
 // ----------------------------------------------------------------------------
 
@@ -22,7 +24,17 @@ pub use epi::NativeOptions;
 #[derive(Debug)]
 enum EventResult {
     Wait,
-    RepaintAsap,
+    /// Causes a synchronous repaint inside the event handler. This should only
+    /// be used in special situations if the window must be repainted while
+    /// handling a specific event. This occurs on Windows when handling resizes.
+    ///
+    /// `RepaintNow` creates a new frame synchronously, and should therefore
+    /// only be used for extremely urgent repaints.
+    RepaintNow,
+    /// Queues a repaint for once the event loop handles its next redraw. Exists
+    /// so that multiple input events can be handled in one frame. Does not
+    /// cause any delay like `RepaintNow`.
+    RepaintNext,
     RepaintAt(Instant),
     Exit,
 }
@@ -35,14 +47,14 @@ trait WinitApp {
     fn paint(&mut self) -> EventResult;
     fn on_event(
         &mut self,
-        event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
-        event: &winit::event::Event<'_, RequestRepaintEvent>,
+        event_loop: &EventLoopWindowTarget<UserEvent>,
+        event: &winit::event::Event<'_, UserEvent>,
     ) -> EventResult;
 }
 
 fn create_event_loop_builder(
     native_options: &mut epi::NativeOptions,
-) -> EventLoopBuilder<RequestRepaintEvent> {
+) -> EventLoopBuilder<UserEvent> {
     let mut event_loop_builder = winit::event_loop::EventLoopBuilder::with_user_event();
 
     if let Some(hook) = std::mem::take(&mut native_options.event_loop_builder) {
@@ -58,10 +70,10 @@ fn create_event_loop_builder(
 /// multiple times. This is just a limitation of winit.
 fn with_event_loop(
     mut native_options: epi::NativeOptions,
-    f: impl FnOnce(&mut EventLoop<RequestRepaintEvent>, NativeOptions),
+    f: impl FnOnce(&mut EventLoop<UserEvent>, NativeOptions),
 ) {
     use std::cell::RefCell;
-    thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop<RequestRepaintEvent>>> = RefCell::new(None));
+    thread_local!(static EVENT_LOOP: RefCell<Option<EventLoop<UserEvent>>> = RefCell::new(None));
 
     EVENT_LOOP.with(|event_loop| {
         // Since we want to reference NativeOptions when creating the EventLoop we can't
@@ -74,7 +86,7 @@ fn with_event_loop(
     });
 }
 
-fn run_and_return(event_loop: &mut EventLoop<RequestRepaintEvent>, mut winit_app: impl WinitApp) {
+fn run_and_return(event_loop: &mut EventLoop<UserEvent>, mut winit_app: impl WinitApp) {
     use winit::platform::run_return::EventLoopExtRunReturn as _;
 
     tracing::debug!("event_loop.run_return");
@@ -100,10 +112,10 @@ fn run_and_return(event_loop: &mut EventLoop<RequestRepaintEvent>, mut winit_app
                 winit_app.paint()
             }
 
-            winit::event::Event::UserEvent(RequestRepaintEvent)
+            winit::event::Event::UserEvent(UserEvent::RequestRepaint)
             | winit::event::Event::NewEvents(winit::event::StartCause::ResumeTimeReached {
                 ..
-            }) => EventResult::RepaintAsap,
+            }) => EventResult::RepaintNext,
 
             winit::event::Event::WindowEvent { window_id, .. }
                 if winit_app.window().is_none()
@@ -119,7 +131,12 @@ fn run_and_return(event_loop: &mut EventLoop<RequestRepaintEvent>, mut winit_app
 
         match event_result {
             EventResult::Wait => {}
-            EventResult::RepaintAsap => {
+            EventResult::RepaintNow => {
+                tracing::trace!("Repaint caused by winit::Event: {:?}", event);
+                next_repaint_time = Instant::now() + Duration::from_secs(1_000_000_000);
+                winit_app.paint();
+            }
+            EventResult::RepaintNext => {
                 tracing::trace!("Repaint caused by winit::Event: {:?}", event);
                 next_repaint_time = Instant::now();
             }
@@ -161,10 +178,7 @@ fn run_and_return(event_loop: &mut EventLoop<RequestRepaintEvent>, mut winit_app
     });
 }
 
-fn run_and_exit(
-    event_loop: EventLoop<RequestRepaintEvent>,
-    mut winit_app: impl WinitApp + 'static,
-) -> ! {
+fn run_and_exit(event_loop: EventLoop<UserEvent>, mut winit_app: impl WinitApp + 'static) -> ! {
     tracing::debug!("event_loop.run");
 
     let mut next_repaint_time = Instant::now();
@@ -185,17 +199,21 @@ fn run_and_exit(
                 winit_app.paint()
             }
 
-            winit::event::Event::UserEvent(RequestRepaintEvent)
+            winit::event::Event::UserEvent(UserEvent::RequestRepaint)
             | winit::event::Event::NewEvents(winit::event::StartCause::ResumeTimeReached {
                 ..
-            }) => EventResult::RepaintAsap,
+            }) => EventResult::RepaintNext,
 
             event => winit_app.on_event(event_loop, &event),
         };
 
         match event_result {
             EventResult::Wait => {}
-            EventResult::RepaintAsap => {
+            EventResult::RepaintNow => {
+                next_repaint_time = Instant::now() + Duration::from_secs(1_000_000_000);
+                winit_app.paint();
+            }
+            EventResult::RepaintNext => {
                 next_repaint_time = Instant::now();
             }
             EventResult::RepaintAt(repaint_time) => {
@@ -280,7 +298,7 @@ mod glow_integration {
     }
 
     struct GlowWinitApp {
-        repaint_proxy: Arc<egui::mutex::Mutex<EventLoopProxy<RequestRepaintEvent>>>,
+        repaint_proxy: Arc<egui::mutex::Mutex<EventLoopProxy<UserEvent>>>,
         app_name: String,
         native_options: epi::NativeOptions,
         running: Option<GlowWinitRunning>,
@@ -294,7 +312,7 @@ mod glow_integration {
 
     impl GlowWinitApp {
         fn new(
-            event_loop: &EventLoop<RequestRepaintEvent>,
+            event_loop: &EventLoop<UserEvent>,
             app_name: &str,
             native_options: epi::NativeOptions,
             app_creator: epi::AppCreator,
@@ -311,7 +329,7 @@ mod glow_integration {
 
         #[allow(unsafe_code)]
         fn create_glutin_windowed_context(
-            event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
+            event_loop: &EventLoopWindowTarget<UserEvent>,
             storage: Option<&dyn epi::Storage>,
             title: &String,
             native_options: &NativeOptions,
@@ -330,8 +348,9 @@ mod glow_integration {
             };
             let window_settings = epi_integration::load_window_settings(storage);
 
-            let window_builder =
-                epi_integration::window_builder(native_options, &window_settings).with_title(title);
+            let window_builder = epi_integration::window_builder(native_options, &window_settings)
+                .with_title(title)
+                .with_visible(false); // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
 
             let gl_window = unsafe {
                 glutin::ContextBuilder::new()
@@ -352,7 +371,7 @@ mod glow_integration {
             (gl_window, gl)
         }
 
-        fn init_run_state(&mut self, event_loop: &EventLoopWindowTarget<RequestRepaintEvent>) {
+        fn init_run_state(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
             let storage = epi_integration::create_storage(&self.app_name);
 
             let (gl_window, gl) = Self::create_glutin_windowed_context(
@@ -389,7 +408,10 @@ mod glow_integration {
             {
                 let event_loop_proxy = self.repaint_proxy.clone();
                 integration.egui_ctx.set_request_repaint_callback(move || {
-                    event_loop_proxy.lock().send_event(RequestRepaintEvent).ok();
+                    event_loop_proxy
+                        .lock()
+                        .send_event(UserEvent::RequestRepaint)
+                        .ok();
                 });
             }
 
@@ -493,10 +515,12 @@ mod glow_integration {
                     gl_window.swap_buffers().unwrap();
                 }
 
+                integration.post_present(window);
+
                 let control_flow = if integration.should_close() {
                     EventResult::Exit
                 } else if repaint_after.is_zero() {
-                    EventResult::RepaintAsap
+                    EventResult::RepaintNext
                 } else if let Some(repaint_after_instant) =
                     std::time::Instant::now().checked_add(repaint_after)
                 {
@@ -530,15 +554,15 @@ mod glow_integration {
 
         fn on_event(
             &mut self,
-            event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
-            event: &winit::event::Event<'_, RequestRepaintEvent>,
+            event_loop: &EventLoopWindowTarget<UserEvent>,
+            event: &winit::event::Event<'_, UserEvent>,
         ) -> EventResult {
             match event {
                 winit::event::Event::Resumed => {
                     if self.running.is_none() {
                         self.init_run_state(event_loop);
                     }
-                    EventResult::RepaintAsap
+                    EventResult::RepaintNow
                 }
                 winit::event::Event::Suspended => {
                     #[cfg(target_os = "android")]
@@ -560,11 +584,28 @@ mod glow_integration {
 
                 winit::event::Event::WindowEvent { event, .. } => {
                     if let Some(running) = &mut self.running {
+                        // On Windows, if a window is resized by the user, it should repaint synchronously, inside the
+                        // event handler.
+                        //
+                        // If this is not done, the compositor will assume that the window does not want to redraw,
+                        // and continue ahead.
+                        //
+                        // In eframe's case, that causes the window to rapidly flicker, as it struggles to deliver
+                        // new frames to the compositor in time.
+                        //
+                        // The flickering is technically glutin or glow's fault, but we should be responding properly
+                        // to resizes anyway, as doing so avoids dropping frames.
+                        //
+                        // See: https://github.com/emilk/egui/issues/903
+                        let mut repaint_asap = false;
+
                         match &event {
                             winit::event::WindowEvent::Focused(new_focused) => {
                                 self.is_focused = *new_focused;
                             }
                             winit::event::WindowEvent::Resized(physical_size) => {
+                                repaint_asap = true;
+
                                 // Resize with 0 width and height is used by winit to signal a minimize event on Windows.
                                 // See: https://github.com/rust-windowing/winit/issues/208
                                 // This solves an issue where the app would panic when minimizing on Windows.
@@ -576,6 +617,7 @@ mod glow_integration {
                                 new_inner_size,
                                 ..
                             } => {
+                                repaint_asap = true;
                                 running.gl_window.resize(**new_inner_size);
                             }
                             winit::event::WindowEvent::CloseRequested
@@ -592,7 +634,11 @@ mod glow_integration {
                         if running.integration.should_close() {
                             EventResult::Exit
                         } else if event_response.repaint {
-                            EventResult::RepaintAsap
+                            if repaint_asap {
+                                EventResult::RepaintNow
+                            } else {
+                                EventResult::RepaintNext
+                            }
                         } else {
                             EventResult::Wait
                         }
@@ -653,7 +699,7 @@ mod wgpu_integration {
     }
 
     struct WgpuWinitApp {
-        repaint_proxy: Arc<std::sync::Mutex<EventLoopProxy<RequestRepaintEvent>>>,
+        repaint_proxy: Arc<std::sync::Mutex<EventLoopProxy<UserEvent>>>,
         app_name: String,
         native_options: epi::NativeOptions,
         app_creator: Option<epi::AppCreator>,
@@ -667,7 +713,7 @@ mod wgpu_integration {
 
     impl WgpuWinitApp {
         fn new(
-            event_loop: &EventLoop<RequestRepaintEvent>,
+            event_loop: &EventLoop<UserEvent>,
             app_name: &str,
             native_options: epi::NativeOptions,
             app_creator: epi::AppCreator,
@@ -684,7 +730,7 @@ mod wgpu_integration {
         }
 
         fn create_window(
-            event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
+            event_loop: &EventLoopWindowTarget<UserEvent>,
             storage: Option<&dyn epi::Storage>,
             title: &String,
             native_options: &NativeOptions,
@@ -692,6 +738,7 @@ mod wgpu_integration {
             let window_settings = epi_integration::load_window_settings(storage);
             epi_integration::window_builder(native_options, &window_settings)
                 .with_title(title)
+                .with_visible(false) // Keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
                 .build(event_loop)
                 .unwrap()
         }
@@ -719,7 +766,7 @@ mod wgpu_integration {
 
         fn init_run_state(
             &mut self,
-            event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
+            event_loop: &EventLoopWindowTarget<UserEvent>,
             storage: Option<Box<dyn epi::Storage>>,
             window: winit::window::Window,
         ) {
@@ -758,7 +805,7 @@ mod wgpu_integration {
                     event_loop_proxy
                         .lock()
                         .unwrap()
-                        .send_event(RequestRepaintEvent)
+                        .send_event(UserEvent::RequestRepaint)
                         .ok();
                 });
             }
@@ -850,11 +897,12 @@ mod wgpu_integration {
                 );
 
                 integration.post_rendering(app.as_mut(), window);
+                integration.post_present(window);
 
                 let control_flow = if integration.should_close() {
                     EventResult::Exit
                 } else if repaint_after.is_zero() {
-                    EventResult::RepaintAsap
+                    EventResult::RepaintNext
                 } else if let Some(repaint_after_instant) =
                     std::time::Instant::now().checked_add(repaint_after)
                 {
@@ -888,8 +936,8 @@ mod wgpu_integration {
 
         fn on_event(
             &mut self,
-            event_loop: &EventLoopWindowTarget<RequestRepaintEvent>,
-            event: &winit::event::Event<'_, RequestRepaintEvent>,
+            event_loop: &EventLoopWindowTarget<UserEvent>,
+            event: &winit::event::Event<'_, UserEvent>,
         ) -> EventResult {
             match event {
                 winit::event::Event::Resumed => {
@@ -913,7 +961,7 @@ mod wgpu_integration {
                         );
                         self.init_run_state(event_loop, storage, window);
                     }
-                    EventResult::RepaintAsap
+                    EventResult::RepaintNow
                 }
                 winit::event::Event::Suspended => {
                     #[cfg(target_os = "android")]
@@ -923,11 +971,28 @@ mod wgpu_integration {
 
                 winit::event::Event::WindowEvent { event, .. } => {
                     if let Some(running) = &mut self.running {
+                        // On Windows, if a window is resized by the user, it should repaint synchronously, inside the
+                        // event handler.
+                        //
+                        // If this is not done, the compositor will assume that the window does not want to redraw,
+                        // and continue ahead.
+                        //
+                        // In eframe's case, that causes the window to rapidly flicker, as it struggles to deliver
+                        // new frames to the compositor in time.
+                        //
+                        // The flickering is technically glutin or glow's fault, but we should be responding properly
+                        // to resizes anyway, as doing so avoids dropping frames.
+                        //
+                        // See: https://github.com/emilk/egui/issues/903
+                        let mut repaint_asap = false;
+
                         match &event {
                             winit::event::WindowEvent::Focused(new_focused) => {
                                 self.is_focused = *new_focused;
                             }
                             winit::event::WindowEvent::Resized(physical_size) => {
+                                repaint_asap = true;
+
                                 // Resize with 0 width and height is used by winit to signal a minimize event on Windows.
                                 // See: https://github.com/rust-windowing/winit/issues/208
                                 // This solves an issue where the app would panic when minimizing on Windows.
@@ -942,6 +1007,7 @@ mod wgpu_integration {
                                 new_inner_size,
                                 ..
                             } => {
+                                repaint_asap = true;
                                 running
                                     .painter
                                     .on_window_resized(new_inner_size.width, new_inner_size.height);
@@ -959,7 +1025,11 @@ mod wgpu_integration {
                         if running.integration.should_close() {
                             EventResult::Exit
                         } else if event_response.repaint {
-                            EventResult::RepaintAsap
+                            if repaint_asap {
+                                EventResult::RepaintNow
+                            } else {
+                                EventResult::RepaintNext
+                            }
                         } else {
                             EventResult::Wait
                         }

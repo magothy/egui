@@ -146,7 +146,7 @@ pub fn handle_app_output(
         fullscreen,
         drag_window,
         window_pos,
-        visible,
+        visible: _, // handled in post_present
         always_on_top,
     } = app_output;
 
@@ -165,7 +165,7 @@ pub fn handle_app_output(
     }
 
     if let Some(fullscreen) = fullscreen {
-        window.set_fullscreen(fullscreen.then(|| winit::window::Fullscreen::Borderless(None)));
+        window.set_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)));
     }
 
     if let Some(window_title) = window_title {
@@ -181,10 +181,6 @@ pub fn handle_app_output(
 
     if drag_window {
         let _ = window.drag_window();
-    }
-
-    if let Some(visible) = visible {
-        window.set_visible(visible);
     }
 
     if let Some(always_on_top) = always_on_top {
@@ -231,14 +227,19 @@ impl EpiIntegration {
 
         *egui_ctx.memory() = load_egui_memory(storage.as_deref()).unwrap_or_default();
 
+        let native_pixels_per_point = window.scale_factor() as f32;
+
         let frame = epi::Frame {
             info: epi::IntegrationInfo {
                 system_theme,
                 cpu_usage: None,
-                native_pixels_per_point: Some(native_pixels_per_point(window)),
+                native_pixels_per_point: Some(native_pixels_per_point),
                 window_info: read_window_info(window, egui_ctx.pixels_per_point()),
             },
-            output: Default::default(),
+            output: epi::backend::AppOutput {
+                visible: Some(true),
+                ..Default::default()
+            },
             storage,
             #[cfg(feature = "glow")]
             gl,
@@ -248,8 +249,7 @@ impl EpiIntegration {
 
         let mut egui_winit = egui_winit::State::new(event_loop);
         egui_winit.set_max_texture_side(max_texture_side);
-        let pixels_per_point = window.scale_factor() as f32;
-        egui_winit.set_pixels_per_point(pixels_per_point);
+        egui_winit.set_pixels_per_point(native_pixels_per_point);
 
         Self {
             frame,
@@ -292,6 +292,9 @@ impl EpiIntegration {
                 state: ElementState::Pressed,
                 ..
             } => self.can_drag_window = true,
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.frame.info.native_pixels_per_point = Some(*scale_factor as _);
+            }
             _ => {}
         }
 
@@ -321,10 +324,11 @@ impl EpiIntegration {
             if app_output.close {
                 self.close = app.on_close_event();
             }
+            self.frame.output.visible = app_output.visible; // this is handled by post_present
             handle_app_output(window, self.egui_ctx.pixels_per_point(), app_output);
         }
 
-        let frame_time = (std::time::Instant::now() - frame_start).as_secs_f64() as f32;
+        let frame_time = frame_start.elapsed().as_secs_f64() as f32;
         self.frame.info.cpu_usage = Some(frame_time);
 
         full_output
@@ -335,6 +339,12 @@ impl EpiIntegration {
         let window_size_px = [inner_size.width, inner_size.height];
 
         app.post_rendering(window_size_px, &self.frame);
+    }
+
+    pub fn post_present(&mut self, window: &winit::window::Window) {
+        if let Some(visible) = self.frame.output.visible.take() {
+            window.set_visible(visible);
+        }
     }
 
     pub fn handle_platform_output(
