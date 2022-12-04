@@ -75,8 +75,8 @@ impl<const AXIS: usize> Default for AxisHints<AXIS> {
     /// maximum `digits` on tick label is 5
     fn default() -> Self {
         let label = match AXIS {
-            X_AXIS => "x".to_string(),
-            Y_AXIS => "y".to_string(),
+            X_AXIS => "x".to_owned(),
+            Y_AXIS => "y".to_owned(),
             _ => unreachable!(),
         };
         Self {
