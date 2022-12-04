@@ -8,6 +8,7 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * MSRV (Minimum Supported Rust Version) is now `1.65.0` ([#2314](https://github.com/emilk/egui/pull/2314)).
 * ⚠️ BREAKING: egui now expects integrations to do all color blending in gamma space ([#2071](https://github.com/emilk/egui/pull/2071)).
 * ⚠️ BREAKING: if you have overlapping interactive widgets, only the top widget (last added) will be interactive ([#2244](https://github.com/emilk/egui/pull/2244)).
+* Keyboard press events are only present at the frame when the key was pressed, consistent with how key releases work ([#2334](https://github.com/emilk/egui/pull/2334)).
 
 
 ### Added ⭐
@@ -25,6 +26,7 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * Added possibility to enable text wrap for the selected text of `egui::ComboBox` ([#2272](https://github.com/emilk/egui/pull/2244))
 * Added `Area::constrain` and `Window::constrain` which constrains area to the screen bounds. ([#2270](https://github.com/emilk/egui/pull/2270)).
 * Added `Area::pivot` and `Window::pivot` which controls what part of the window to position. ([#2303](https://github.com/emilk/egui/pull/2303)).
+* Added support for [thin space](https://en.wikipedia.org/wiki/Thin_space).
 
 ### Changed 🔧
 * Panels always have a separator line, but no stroke on other sides. Their spacing has also changed slightly ([#2261](https://github.com/emilk/egui/pull/2261)).
@@ -38,6 +40,8 @@ NOTE: [`epaint`](crates/epaint/CHANGELOG.md), [`eframe`](crates/eframe/CHANGELOG
 * Less jitter when calling `Context::set_pixels_per_point` ([#2239](https://github.com/emilk/egui/pull/2239)).
 * Draw plot ticks outside of plotting window. ([#2284](https://github.com/emilk/egui/pull/2284))
 * Fixed popups and color edit going outside the screen.
+* Fixed keyboard support in `DragValue` ([#2342](https://github.com/emilk/egui/pull/2342)).
+* If you nest `ScrollAreas` inside each other, the inner area will now move its scroll bar so it is always visible ([#2371](https://github.com/emilk/egui/pull/2371)).
 
 
 ## 0.19.0 - 2022-08-20
