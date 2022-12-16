@@ -203,11 +203,17 @@ pub struct NativeOptions {
     /// [drag_and_drop]: https://docs.rs/winit/latest/x86_64-pc-windows-msvc/winit/platform/windows/trait.WindowBuilderExtWindows.html#tymethod.with_drag_and_drop
     pub drag_and_drop_support: bool,
 
-    /// The application icon, e.g. in the Windows task bar etc.
+    /// The application icon, e.g. in the Windows top-left titlebar icon
     ///
     /// This doesn't work on Mac and on Wayland.
     /// See <https://docs.rs/winit/latest/winit/window/struct.Window.html#method.set_window_icon> for more.
     pub icon_data: Option<IconData>,
+
+    /// The application icon, e.g. in the Windows top-left titlebar icon
+    ///
+    /// This only applies to Windows
+    /// See <https://github.com/rust-windowing/winit/blob/92fdf5ba85f920262a61cee4590f4a11ad5738d1/src/platform/windows.rs#L214> for more.
+    pub windows_taskbar_icon_data: Option<IconData>,
 
     /// The initial (inner) position of the native window in points (logical pixels).
     pub initial_window_pos: Option<egui::Pos2>,
@@ -304,6 +310,7 @@ impl Default for NativeOptions {
             fullscreen: false,
             drag_and_drop_support: true,
             icon_data: None,
+            windows_taskbar_icon_data: None,
             initial_window_pos: None,
             initial_window_size: None,
             min_window_size: None,

@@ -41,6 +41,7 @@ pub fn window_builder(
         fullscreen,
         drag_and_drop_support,
         icon_data,
+        windows_taskbar_icon_data,
         initial_window_pos,
         initial_window_size,
         min_window_size,
@@ -51,6 +52,7 @@ pub fn window_builder(
     } = native_options;
 
     let window_icon = icon_data.clone().and_then(load_icon);
+    let windows_taskbar_icon = windows_taskbar_icon_data.clone().and_then(load_icon);
 
     let mut window_builder = winit::window::WindowBuilder::new()
         .with_always_on_top(*always_on_top)
@@ -69,6 +71,7 @@ pub fn window_builder(
     }
 
     window_builder = window_builder_drag_and_drop(window_builder, *drag_and_drop_support);
+    window_builder = window_builder_taskbar_icon(window_builder, windows_taskbar_icon);
 
     if let Some(window_settings) = window_settings {
         window_builder = window_settings.initialize_window(window_builder);
@@ -106,6 +109,23 @@ fn window_builder_drag_and_drop(
     _enable: bool,
 ) -> winit::window::WindowBuilder {
     // drag and drop can only be disabled on windows
+    window_builder
+}
+
+#[cfg(target_os = "windows")]
+fn window_builder_taskbar_icon(
+    window_builder: winit::window::WindowBuilder,
+    icon: Option<winit::window::Icon>,
+) -> winit::window::WindowBuilder {
+    use winit::platform::windows::WindowBuilderExtWindows as _;
+    window_builder.with_taskbar_icon(icon)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn window_builder_taskbar_icon(
+    window_builder: winit::window::WindowBuilder,
+    _icon: Option<winit::window::Icon>,
+) -> winit::window::WindowBuilder {
     window_builder
 }
 
