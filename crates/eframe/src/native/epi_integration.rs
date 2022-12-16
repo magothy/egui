@@ -42,6 +42,7 @@ pub fn window_builder(
         drag_and_drop_support,
         icon_data,
         windows_taskbar_icon_data,
+        wayland_applicaiton_id,
         initial_window_pos,
         initial_window_size,
         min_window_size,
@@ -72,6 +73,7 @@ pub fn window_builder(
 
     window_builder = window_builder_drag_and_drop(window_builder, *drag_and_drop_support);
     window_builder = window_builder_taskbar_icon(window_builder, windows_taskbar_icon);
+    window_builder = window_builder_application_id(window_builder, wayland_applicaiton_id.clone());
 
     if let Some(window_settings) = window_settings {
         window_builder = window_settings.initialize_window(window_builder);
@@ -125,6 +127,26 @@ fn window_builder_taskbar_icon(
 fn window_builder_taskbar_icon(
     window_builder: winit::window::WindowBuilder,
     _icon: Option<winit::window::Icon>,
+) -> winit::window::WindowBuilder {
+    window_builder
+}
+
+#[cfg(any(feature = "wayland", feature = "x11"))]
+fn window_builder_application_id(
+    window_builder: winit::window::WindowBuilder,
+    name: Option<String>,
+) -> winit::window::WindowBuilder {
+    use winit::platform::unix::WindowBuilderExtUnix as _;
+    match (name) {
+        Some(name) => window_builder.with_name(name),
+        None => window_builder,
+    }
+}
+
+#[cfg(not(any(feature = "wayland", feature = "x11")))]
+fn window_builder_application_id(
+    window_builder: winit::window::WindowBuilder,
+    _name: Option<String>,
 ) -> winit::window::WindowBuilder {
     window_builder
 }

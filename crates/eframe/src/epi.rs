@@ -215,6 +215,12 @@ pub struct NativeOptions {
     /// See <https://github.com/rust-windowing/winit/blob/92fdf5ba85f920262a61cee4590f4a11ad5738d1/src/platform/windows.rs#L214> for more.
     pub windows_taskbar_icon_data: Option<IconData>,
 
+    /// The Wayland application id
+    ///
+    /// This only applies to Wayland/X11
+    /// See <https://github.com/rust-windowing/winit/blob/0.27/src/platform/unix.rs#L334> for more.
+    pub wayland_applicaiton_id: Option<String>,
+
     /// The initial (inner) position of the native window in points (logical pixels).
     pub initial_window_pos: Option<egui::Pos2>,
 
@@ -311,6 +317,7 @@ impl Default for NativeOptions {
             drag_and_drop_support: true,
             icon_data: None,
             windows_taskbar_icon_data: None,
+            wayland_applicaiton_id: None,
             initial_window_pos: None,
             initial_window_size: None,
             min_window_size: None,
