@@ -131,19 +131,19 @@ fn window_builder_taskbar_icon(
     window_builder
 }
 
-#[cfg(any(feature = "wayland", feature = "x11"))]
+#[cfg(any(target_os = "linux"))]
 fn window_builder_application_id(
     window_builder: winit::window::WindowBuilder,
     name: Option<String>,
 ) -> winit::window::WindowBuilder {
     use winit::platform::unix::WindowBuilderExtUnix as _;
-    match (name) {
-        Some(name) => window_builder.with_name(name),
+    match name {
+        Some(name) => window_builder.with_name(name.clone(), name),
         None => window_builder,
     }
 }
 
-#[cfg(not(any(feature = "wayland", feature = "x11")))]
+#[cfg(not(any(target_os = "linux")))]
 fn window_builder_application_id(
     window_builder: winit::window::WindowBuilder,
     _name: Option<String>,
