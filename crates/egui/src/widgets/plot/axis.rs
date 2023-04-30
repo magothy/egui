@@ -255,7 +255,7 @@ impl<const AXIS: usize> Widget for AxisWidget<AXIS> {
                     let line_alpha = remap_clamp(
                         spacing_in_points,
                         (MIN_LINE_SPACING_IN_POINTS as f32 * 2.0)..=300.0,
-                        0.0..=0.15,
+                        0.0..=0.3,
                     );
 
                     if line_alpha > 0.0 {
